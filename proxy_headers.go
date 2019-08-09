@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -54,6 +55,51 @@ func ProxyHeaders(h http.Handler) http.Handler {
 		// Set the host with the value passed by the proxy
 		if r.Header.Get(xForwardedHost) != "" {
 			r.Host = r.Header.Get(xForwardedHost)
+		}
+		// Call the next handler in the chain.
+		h.ServeHTTP(w, r)
+	}
+
+	return http.HandlerFunc(fn)
+}
+
+// ProxyHeadersFromTrusted performs the same process as ProxyHeaders however it
+// is passed a list of "trusted" source IP addresses.
+//
+// Using a hostname in the list of sources will never match as no DNS lookups are
+// performed.
+//
+// Only requests from these trusted sources will alter the HTTP Request struct as
+// per the ProxyHeaders handler.
+func ProxyHeadersFromTrusted(h http.Handler, trustedIP []string) http.Handler {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		// Split RemoteAddr so we have the source IP
+		if src, _, err := net.SplitHostPort(r.RemoteAddr); err != nil {
+			// Check if the source of the request is in the list
+			sourceMatched := false
+			for _, trust := range trustedIP {
+				if src == trust {
+					sourceMatched = true
+					break
+				}
+			}
+
+			// Perform any changes if the source matched
+			if sourceMatched {
+				// Set the remote IP with the value passed from the proxy.
+				if fwd := getIP(r); fwd != "" {
+					r.RemoteAddr = fwd
+				}
+
+				// Set the scheme (proto) with the value passed from the proxy.
+				if scheme := getScheme(r); scheme != "" {
+					r.URL.Scheme = scheme
+				}
+				// Set the host with the value passed by the proxy
+				if r.Header.Get(xForwardedHost) != "" {
+					r.Host = r.Header.Get(xForwardedHost)
+				}
+			}
 		}
 		// Call the next handler in the chain.
 		h.ServeHTTP(w, r)
