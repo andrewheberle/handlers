@@ -74,7 +74,7 @@ func ProxyHeaders(h http.Handler) http.Handler {
 func ProxyHeadersFromTrusted(h http.Handler, trustedIP []string) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		// Split RemoteAddr so we have the source IP
-		if src, _, err := net.SplitHostPort(r.RemoteAddr); err != nil {
+		if src, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 			// Check if the source of the request is in the list
 			sourceMatched := false
 			for _, trust := range trustedIP {
