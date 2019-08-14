@@ -8,9 +8,18 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"strings"
+	"sync"
 )
+
+var gzPool = sync.Pool{
+	New: func() interface{} {
+		w := gzip.NewWriter(ioutil.Discard)
+		return w
+	},
+}
 
 type compressResponseWriter struct {
 	io.Writer
@@ -75,6 +84,10 @@ func CompressHandlerLevel(h http.Handler, level int) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gzPool.New = func() interface{} {
+			w, _ := gzip.NewWriterLevel(w, level)
+			return w
+		}
 	L:
 		for _, enc := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
 			switch strings.TrimSpace(enc) {
@@ -83,7 +96,10 @@ func CompressHandlerLevel(h http.Handler, level int) http.Handler {
 				r.Header.Del("Accept-Encoding")
 				w.Header().Add("Vary", "Accept-Encoding")
 
-				gw, _ := gzip.NewWriterLevel(w, level)
+				gw := gzPool.Get().(*gzip.Writer)
+				defer gzPool.Put(gw)
+
+				gw.Reset(w)
 				defer gw.Close()
 
 				h, hok := w.(http.Hijacker)
